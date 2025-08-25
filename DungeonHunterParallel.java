@@ -19,6 +19,11 @@ import java.util.Random;
 import java.util.ArrayList;
 import java.util.List;
 
+class ThreadResult {
+    public int max = Integer.MIN_VALUE;
+    public int finderIndex = -1;
+}
+
 class DungeonHunterParallel {
     static final boolean DEBUG = false;
 
@@ -85,10 +90,6 @@ class DungeonHunterParallel {
             searches[i] = new HuntParallel(i + 1, rand.nextInt(dungeonRows), rand.nextInt(dungeonColumns), dungeon);
         }
 
-        // Variables to store final results
-        int[] globalMax = new int[]{Integer.MIN_VALUE};
-        int[] globalFinder = new int[]{-1};
-
         tick(); // Start timer for parallel work
 
         // Determine number of threads (use available processors)
@@ -96,14 +97,19 @@ class DungeonHunterParallel {
         int searchesPerThread = numSearches / numThreads;
         int remainder = numSearches % numThreads;
 
+        // List to hold the RESULTS from each thread
+        List<ThreadResult> threadResults = new ArrayList<>(numThreads);
         // List to hold all threads
         List<Thread> threads = new ArrayList<>();
 
         // Create and start threads
         for (int i = 0; i < numThreads; i++) {
-            final int threadId = i;
             final int startIndex = i * searchesPerThread;
             final int endIndex = (i == numThreads - 1) ? startIndex + searchesPerThread + remainder : startIndex + searchesPerThread;
+
+            // Create a result object for THIS THREAD to store its findings
+            ThreadResult result = new ThreadResult();
+            threadResults.add(result);
 
             Thread thread = new Thread(() -> {
                 int localMax = Integer.MIN_VALUE;
@@ -111,24 +117,23 @@ class DungeonHunterParallel {
 
                 // Process assigned searches
                 for (int j = startIndex; j < endIndex; j++) {
-                    int result = searches[j].findManaPeak();
+                    int resultVal = searches[j].findManaPeak();
                     
                     // Update local max for this thread
-                    if (result > localMax) {
-                        localMax = result;
+                    if (resultVal > localMax) {
+                        localMax = resultVal;
                         localFinder = j;
                     }
                     
                     if (DEBUG) {
-                        System.out.println("Shadow " + searches[j].getID() + " finished at " + result + " in " + searches[j].getSteps());
+                        System.out.println("Shadow " + searches[j].getID() + " finished at " + resultVal + " in " + searches[j].getSteps());
                     }
                 }
 
-                // Update global results (race condition is benign)
-                if (localMax > globalMax[0]) {
-                    globalMax[0] = localMax;
-                    globalFinder[0] = localFinder;
-                }
+                // Store the result in this thread's private result object.
+                // NO RACE CONDITION because only THIS thread writes to ITS OWN result object.
+                result.max = localMax;
+                result.finderIndex = localFinder;
             });
 
             threads.add(thread);
@@ -146,15 +151,23 @@ class DungeonHunterParallel {
 
         tock(); // End timer for parallel work
 
-        int max = globalMax[0];
-        int finder = globalFinder[0];
+        // NOW, safely find the global maximum SEQUENTIALLY in the main thread.
+        // All worker threads have finished, so there is no more concurrency.
+        int max = Integer.MIN_VALUE;
+        int finder = -1;
+        for (ThreadResult threadResult : threadResults) {
+            if (threadResult.max > max) {
+                max = threadResult.max;
+                finder = threadResult.finderIndex;
+            }
+        }
 
         System.out.printf("\t dungeon size: %d,\n", gateSize);
         System.out.printf("\t rows: %d, columns: %d\n", dungeonRows, dungeonColumns);
         System.out.printf("\t x: [%f, %f], y: [%f, %f]\n", xmin, xmax, ymin, ymax);
         System.out.printf("\t Number searches: %d\n", numSearches);
 
-        /* Total computation time */
+        // Total computation time
         System.out.printf("\n\t time: %d ms\n", endTime - startTime);
         int tmp = dungeon.getGridPointsEvaluated();
         System.out.printf("\tnumber dungeon grid points evaluated: %d  (%2.0f%s)\n", tmp, (tmp * 1.0 / (dungeonRows * dungeonColumns * 1.0)) * 100.0, "%");
@@ -166,4 +179,3 @@ class DungeonHunterParallel {
         dungeon.visualisePowerMap("visualiseSearchPath.png", true);
     }
 }
-// done
