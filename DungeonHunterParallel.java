@@ -52,6 +52,10 @@ class DungeonHunterParallel {
             }
             
          numSearches = (int) (Double.parseDouble(args[1]) * (gateSize * 2) * (gateSize * 2) * DungeonMapParallel.RESOLUTION);
+          //  NEW VALIDATION CHECK  //
+         if (numSearches < 1) {
+         throw new IllegalArgumentException("Number of searches calculated to " + numSearches + ". The density value must be high enough to generate at least 1 search.");
+            }
 
             randomSeed = Integer.parseInt(args[2]);
             if (randomSeed < 0) {
